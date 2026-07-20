@@ -6,9 +6,13 @@
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
+from pathlib import Path
 
 import typer
+import yaml
+from pydantic import BaseModel
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
@@ -54,6 +58,64 @@ def analyze_path(rrc: str, location: str, peer: str, as_path: str) -> PathAnalys
         origin=origin,
         upstream=upstream,
         has_as_set=has_as_set,
+    )
+
+
+class ExpectedUpstream(BaseModel):
+    asn: int
+    name: str
+
+
+class PrefixExpectation(BaseModel):
+    prefix: str
+    origin_asn: int
+    expected_upstreams: list[ExpectedUpstream]
+
+
+class Config(BaseModel):
+    prefixes: list[PrefixExpectation]
+
+
+def load_config(path: Path) -> Config:
+    """Load and validate the YAML config file."""
+    data = yaml.safe_load(path.read_text())
+    return Config.model_validate(data)
+
+
+def validate_cidr(subnet: str) -> str:
+    """Return the normalized CIDR string, or raise ValueError."""
+    return str(ipaddress.ip_network(subnet, strict=False))
+
+
+def resolve_expectation(
+    subnet: str,
+    config: Config | None,
+    cli_origin: int | None,
+    cli_expect: list[int],
+) -> PrefixExpectation:
+    """Combine config + CLI overrides into one expectation. CLI wins."""
+    entry = None
+    if config is not None:
+        entry = next((p for p in config.prefixes if p.prefix == subnet), None)
+
+    origin = (
+        cli_origin if cli_origin is not None else (entry.origin_asn if entry else None)
+    )
+
+    if cli_expect:
+        upstreams = [ExpectedUpstream(asn=a, name=f"AS{a}") for a in cli_expect]
+    elif entry is not None:
+        upstreams = list(entry.expected_upstreams)
+    else:
+        upstreams = []
+
+    if origin is None or not upstreams:
+        raise ValueError(
+            f"No expectation for {subnet}: provide it in the config or via --origin and --expect."
+        )
+
+    return PrefixExpectation(
+        prefix=subnet, origin_asn=origin, expected_upstreams=upstreams
     )
 
 
