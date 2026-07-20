@@ -1,17 +1,25 @@
+import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from bgp_validator import (
+    RIPE_URL,
     Config,
     PathAnalysis,
     PrefixExpectation,
+    RipeError,
     analyze_path,
     collapse_prepending,
+    fetch_looking_glass,
     load_config,
+    parse_paths,
     resolve_expectation,
     validate_cidr,
 )
+
+FIXTURE = Path(__file__).parent / "tests" / "fixtures" / "looking_glass.json"
 
 
 def test_module_imports() -> None:
@@ -115,3 +123,36 @@ def test_resolve_cli_overrides_config() -> None:
 def test_resolve_no_data_raises() -> None:
     with pytest.raises(ValueError):
         resolve_expectation("192.0.2.0/24", None, None, [])
+
+
+def test_ripe_url_is_https() -> None:
+    assert RIPE_URL.startswith("https://")
+
+
+def test_parse_paths_walks_all_collectors() -> None:
+    data = json.loads(FIXTURE.read_text())["data"]
+    paths = parse_paths(data)
+    assert len(paths) == 3
+    assert {p.rrc for p in paths} == {"RRC01", "RRC03"}
+    assert all(p.origin == 64496 for p in paths)
+
+
+def test_fetch_looking_glass_ok() -> None:
+    payload = json.loads(FIXTURE.read_text())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["resource"] == "203.0.113.0/24"
+        return httpx.Response(200, json=payload)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    data = fetch_looking_glass("203.0.113.0/24", client)
+    assert len(data["rrcs"]) == 2
+
+
+def test_fetch_looking_glass_bad_status_raises() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "error", "data": {}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(RipeError):
+        fetch_looking_glass("203.0.113.0/24", client)

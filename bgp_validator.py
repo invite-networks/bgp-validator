@@ -10,11 +10,14 @@ import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 import typer
 import yaml
 from pydantic import BaseModel
 
 app = typer.Typer(add_completion=False, help=__doc__)
+
+RIPE_URL = "https://stat.ripe.net/data/looking-glass/data.json"
 
 
 def collapse_prepending(tokens: list[str]) -> list[str]:
@@ -117,6 +120,35 @@ def resolve_expectation(
     return PrefixExpectation(
         prefix=subnet, origin_asn=origin, expected_upstreams=upstreams
     )
+
+
+class RipeError(Exception):
+    """RIPE looking-glass returned an error or unexpected payload."""
+
+
+def fetch_looking_glass(subnet: str, client: httpx.Client) -> dict:
+    """Fetch looking-glass data for a subnet; return the `data` object."""
+    resp = client.get(RIPE_URL, params={"resource": subnet}, timeout=30.0)
+    resp.raise_for_status()
+    payload = resp.json()
+    if payload.get("status") != "ok":
+        raise RipeError(f"RIPE status={payload.get('status')!r} for {subnet}")
+    return payload["data"]
+
+
+def parse_paths(data: dict) -> list[PathAnalysis]:
+    """Flatten RIPE rrcs->peers into analyzed paths."""
+    paths: list[PathAnalysis] = []
+    for rrc in data.get("rrcs", []):
+        rrc_id = rrc.get("rrc", "?")
+        location = rrc.get("location", "")
+        for peer in rrc.get("peers", []):
+            paths.append(
+                analyze_path(
+                    rrc_id, location, peer.get("peer", ""), peer.get("as_path", "")
+                )
+            )
+    return paths
 
 
 @app.command()
