@@ -230,3 +230,73 @@ def test_cli_invalid_subnet_exits_nonzero_without_traceback() -> None:
     )
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_resolve_cli_both_override_config() -> None:
+    config = Config(
+        prefixes=[
+            PrefixExpectation(
+                prefix="203.0.113.0/24",
+                origin_asn=64496,
+                expected_upstreams=[{"asn": 64497, "name": "Provider A"}],
+            )
+        ]
+    )
+    exp = resolve_expectation("203.0.113.0/24", config, 64511, [64499])
+    assert exp.origin_asn == 64511
+    assert {u.asn for u in exp.expected_upstreams} == {64499}
+
+
+def test_validate_direct_and_as_set_paths() -> None:
+    paths = [
+        analyze_path("RRC01", "L", "192.0.2.1", "64496"),
+        analyze_path("RRC02", "M", "192.0.2.2", "64497 {64496,64501}"),
+        analyze_path("RRC03", "A", "192.0.2.3", "64510 64497 64496"),
+    ]
+    result = validate(_exp(), paths)
+    assert len(result.direct_paths) == 1
+    assert len(result.as_set_paths) == 1
+
+
+def test_render_report_shows_missing_and_unexpected() -> None:
+    paths = [
+        analyze_path("RRC01", "London", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC02", "Paris", "192.0.2.2", "64502 64507 64496"),
+    ]
+    result = validate(_exp(), paths)
+    console = Console(record=True, width=120)
+    render_report(console, result)
+    text = console.export_text()
+    assert "MISSING" in text
+    assert "64507" in text
+    assert "64498" in text
+
+
+def test_render_report_pass() -> None:
+    paths = [
+        analyze_path("RRC01", "London", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC02", "Paris", "192.0.2.2", "64502 64498 64496"),
+    ]
+    result = validate(_exp(), paths)
+    assert result.ok
+    console = Console(record=True, width=120)
+    render_report(console, result)
+    assert "PASS" in console.export_text()
+
+
+def test_fetch_invalid_json_raises_ripe_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>not json</html>")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(RipeError):
+        fetch_looking_glass("203.0.113.0/24", client)
+
+
+def test_fetch_missing_data_raises_ripe_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(RipeError):
+        fetch_looking_glass("203.0.113.0/24", client)

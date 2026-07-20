@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 import typer
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -160,7 +160,7 @@ def parse_paths(data: dict) -> list[PathAnalysis]:
     return paths
 
 
-@dataclass
+@dataclass(frozen=True)
 class ValidationResult:
     prefix: str
     expected_origin: int
@@ -269,14 +269,23 @@ def main(
     ),
 ) -> None:
     """Validate observed BGP paths for a subnet against expected origin + upstreams."""
-    cfg = load_config(config) if config else None
     console = Console()
+    cfg: Config | None = None
+    if config:
+        try:
+            cfg = load_config(config)
+        except (OSError, yaml.YAMLError, ValidationError) as exc:
+            console.print(f"[red]Failed to load config {config}: {exc}[/red]")
+            raise typer.Exit(code=2)
 
     if all_prefixes:
         if cfg is None:
             console.print("[red]--all requires --config[/red]")
             raise typer.Exit(code=2)
         subnets = [p.prefix for p in cfg.prefixes]
+        if not subnets:
+            console.print("[red]Config has no prefixes to validate[/red]")
+            raise typer.Exit(code=2)
     else:
         if not subnet:
             console.print("[red]Provide a subnet or use --all with --config[/red]")
