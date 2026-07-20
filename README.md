@@ -30,6 +30,13 @@ Validate every prefix in the config:
 uv run bgp_validator.py --config providers.yaml --all
 ```
 
+Run with no arguments to validate every prefix in `providers.yaml` (equivalent
+to `--config providers.yaml --all`):
+
+```
+uv run bgp_validator.py
+```
+
 CLI flags (`--origin`, `--expect`) override the config for that run. The process
 exits non-zero if any prefix fails validation.
 

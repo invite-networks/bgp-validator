@@ -300,3 +300,16 @@ def test_fetch_missing_data_raises_ripe_error() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     with pytest.raises(RipeError):
         fetch_looking_glass("203.0.113.0/24", client)
+
+
+def test_cli_no_args_defaults_to_config_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no arguments and no providers.yaml in the working directory, the CLI
+    # must default to loading providers.yaml (equivalent to
+    # `--config providers.yaml --all`) and fail cleanly on the missing file,
+    # rather than asking for a subnet.
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, [])
+    assert result.exit_code == 2
+    assert "providers.yaml" in result.output

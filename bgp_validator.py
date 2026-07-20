@@ -22,6 +22,9 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 RIPE_URL = "https://stat.ripe.net/data/looking-glass/data.json"
 
+# When invoked with no arguments at all, behave as `--config providers.yaml --all`.
+DEFAULT_CONFIG = Path("providers.yaml")
+
 
 def collapse_prepending(tokens: list[str]) -> list[str]:
     """Collapse consecutive duplicate ASNs (neutralizes AS-path prepending)."""
@@ -269,6 +272,17 @@ def main(
     ),
 ) -> None:
     """Validate observed BGP paths for a subnet against expected origin + upstreams."""
+    if (
+        subnet is None
+        and config is None
+        and origin is None
+        and not expect
+        and not all_prefixes
+    ):
+        # No arguments: default to validating every prefix in providers.yaml.
+        config = DEFAULT_CONFIG
+        all_prefixes = True
+
     console = Console()
     cfg: Config | None = None
     if config:
