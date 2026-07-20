@@ -9,7 +9,6 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import httpx
 import typer
@@ -134,7 +133,10 @@ def fetch_looking_glass(subnet: str, client: httpx.Client) -> dict:
     """Fetch looking-glass data for a subnet; return the `data` object."""
     resp = client.get(RIPE_URL, params={"resource": subnet}, timeout=30.0)
     resp.raise_for_status()
-    payload = resp.json()
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise RipeError(f"RIPE returned invalid JSON for {subnet}") from exc
     if payload.get("status") != "ok":
         raise RipeError(f"RIPE status={payload.get('status')!r} for {subnet}")
     data = payload.get("data")
@@ -252,13 +254,11 @@ def render_report(console: Console, result: ValidationResult) -> None:
 
 @app.command()
 def main(
-    subnet: Optional[str] = typer.Argument(
+    subnet: str | None = typer.Argument(
         None, help="Subnet to validate, e.g. 203.0.113.0/24"
     ),
-    config: Optional[Path] = typer.Option(
-        None, "--config", help="Path to providers YAML"
-    ),
-    origin: Optional[int] = typer.Option(
+    config: Path | None = typer.Option(None, "--config", help="Path to providers YAML"),
+    origin: int | None = typer.Option(
         None, "--origin", help="Expected origin ASN (ad-hoc)"
     ),
     expect: list[int] = typer.Option(
@@ -281,7 +281,11 @@ def main(
         if not subnet:
             console.print("[red]Provide a subnet or use --all with --config[/red]")
             raise typer.Exit(code=2)
-        subnets = [validate_cidr(subnet)]
+        try:
+            subnets = [validate_cidr(subnet)]
+        except ValueError as exc:
+            console.print(f"[red]Invalid subnet {subnet!r}: {exc}[/red]")
+            raise typer.Exit(code=2)
 
     overall_ok = True
     with httpx.Client() as client:

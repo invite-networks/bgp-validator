@@ -4,6 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
 from bgp_validator import (
     RIPE_URL,
@@ -13,6 +14,7 @@ from bgp_validator import (
     PrefixExpectation,
     RipeError,
     analyze_path,
+    app,
     collapse_prepending,
     fetch_looking_glass,
     load_config,
@@ -220,3 +222,11 @@ def test_render_report_runs() -> None:
     text = console.export_text()
     assert "203.0.113.0/24" in text
     assert "RRC01" in text
+
+
+def test_cli_invalid_subnet_exits_nonzero_without_traceback() -> None:
+    result = CliRunner().invoke(
+        app, ["not-a-cidr", "--origin", "64496", "--expect", "64497"]
+    )
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
