@@ -7,6 +7,7 @@ import pytest
 from bgp_validator import (
     RIPE_URL,
     Config,
+    ExpectedUpstream,
     PathAnalysis,
     PrefixExpectation,
     RipeError,
@@ -16,6 +17,7 @@ from bgp_validator import (
     load_config,
     parse_paths,
     resolve_expectation,
+    validate,
     validate_cidr,
 )
 
@@ -156,3 +158,53 @@ def test_fetch_looking_glass_bad_status_raises() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     with pytest.raises(RipeError):
         fetch_looking_glass("203.0.113.0/24", client)
+
+
+def _exp() -> PrefixExpectation:
+    return PrefixExpectation(
+        prefix="203.0.113.0/24",
+        origin_asn=64496,
+        expected_upstreams=[
+            ExpectedUpstream(asn=64497, name="Provider A"),
+            ExpectedUpstream(asn=64498, name="Provider B"),
+        ],
+    )
+
+
+def test_validate_all_present_is_ok() -> None:
+    paths = [
+        analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64496"),
+    ]
+    result = validate(_exp(), paths)
+    assert result.ok is True
+    assert result.missing == []
+    assert result.unexpected == set()
+
+
+def test_validate_missing_upstream_fails() -> None:
+    paths = [analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496")]
+    result = validate(_exp(), paths)
+    assert result.ok is False
+    assert [u.asn for u in result.missing] == [64498]
+
+
+def test_validate_unexpected_upstream_fails() -> None:
+    paths = [
+        analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64496"),
+        analyze_path("RRC03", "A", "192.0.2.3", "64502 64507 64496"),
+    ]
+    result = validate(_exp(), paths)
+    assert result.ok is False
+    assert result.unexpected == {64507}
+
+
+def test_validate_bad_origin_fails() -> None:
+    paths = [
+        analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64511"),
+    ]
+    result = validate(_exp(), paths)
+    assert result.ok is False
+    assert len(result.bad_origin_paths) == 1

@@ -154,6 +154,49 @@ def parse_paths(data: dict) -> list[PathAnalysis]:
     return paths
 
 
+@dataclass
+class ValidationResult:
+    prefix: str
+    expected_origin: int
+    expected_upstreams: list[ExpectedUpstream]
+    seen_upstreams: set[int]
+    missing: list[ExpectedUpstream]
+    unexpected: set[int]
+    bad_origin_paths: list[PathAnalysis]
+    direct_paths: list[PathAnalysis]
+    as_set_paths: list[PathAnalysis]
+    paths: list[PathAnalysis]
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing and not self.unexpected and not self.bad_origin_paths
+
+
+def validate(
+    expectation: PrefixExpectation, paths: list[PathAnalysis]
+) -> ValidationResult:
+    """Aggregate analyzed paths into a pass/fail result for one prefix."""
+    expected_asns = {u.asn for u in expectation.expected_upstreams}
+    seen = {p.upstream for p in paths if p.upstream is not None}
+    missing = [u for u in expectation.expected_upstreams if u.asn not in seen]
+    unexpected = seen - expected_asns
+    bad_origin = [p for p in paths if p.origin != expectation.origin_asn]
+    direct = [p for p in paths if p.upstream is None and not p.has_as_set]
+    as_sets = [p for p in paths if p.has_as_set]
+    return ValidationResult(
+        prefix=expectation.prefix,
+        expected_origin=expectation.origin_asn,
+        expected_upstreams=expectation.expected_upstreams,
+        seen_upstreams=seen,
+        missing=missing,
+        unexpected=unexpected,
+        bad_origin_paths=bad_origin,
+        direct_paths=direct,
+        as_set_paths=as_sets,
+        paths=paths,
+    )
+
+
 @app.command()
 def main() -> None:
     """Placeholder; wired up in a later task."""
