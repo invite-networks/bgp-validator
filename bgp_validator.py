@@ -133,7 +133,10 @@ def fetch_looking_glass(subnet: str, client: httpx.Client) -> dict:
     payload = resp.json()
     if payload.get("status") != "ok":
         raise RipeError(f"RIPE status={payload.get('status')!r} for {subnet}")
-    return payload["data"]
+    data = payload.get("data")
+    if data is None:
+        raise RipeError(f"RIPE returned no data for {subnet}")
+    return data
 
 
 def parse_paths(data: dict) -> list[PathAnalysis]:
