@@ -4,3 +4,8 @@ __pycache__/
 .ruff_cache/
 .venv/
 .claude/
+
+# Real YAML configs may contain customer data; only ship the generic example.
+*.yaml
+*.yml
+!providers.example.yaml
