@@ -3,6 +3,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from rich.console import Console
 
 from bgp_validator import (
     RIPE_URL,
@@ -16,6 +17,7 @@ from bgp_validator import (
     fetch_looking_glass,
     load_config,
     parse_paths,
+    render_report,
     resolve_expectation,
     validate,
     validate_cidr,
@@ -208,3 +210,13 @@ def test_validate_bad_origin_fails() -> None:
     result = validate(_exp(), paths)
     assert result.ok is False
     assert len(result.bad_origin_paths) == 1
+
+
+def test_render_report_runs() -> None:
+    paths = [analyze_path("RRC01", "London", "192.0.2.1", "64510 64497 64496")]
+    result = validate(_exp(), paths)  # missing 64498 -> not ok
+    console = Console(record=True, width=100)
+    render_report(console, result)
+    text = console.export_text()
+    assert "203.0.113.0/24" in text
+    assert "RRC01" in text

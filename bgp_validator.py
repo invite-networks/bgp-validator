@@ -9,11 +9,15 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import httpx
 import typer
 import yaml
 from pydantic import BaseModel
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
@@ -197,10 +201,114 @@ def validate(
     )
 
 
+def render_report(console: Console, result: ValidationResult) -> None:
+    """Print the summary panel and the per-collector breakdown."""
+    status = "[green]PASS[/green]" if result.ok else "[red]FAIL[/red]"
+    lines = [
+        f"Prefix: [bold]{result.prefix}[/bold]    Result: {status}",
+        f"Expected origin AS{result.expected_origin}: "
+        + (
+            "[green]OK[/green]"
+            if not result.bad_origin_paths
+            else "[red]VIOLATED[/red]"
+        ),
+        "",
+        "Expected upstreams:",
+    ]
+    for u in result.expected_upstreams:
+        seen = u.asn in result.seen_upstreams
+        mark = "[green]seen[/green]" if seen else "[red]MISSING[/red]"
+        lines.append(f"  AS{u.asn} ({u.name}): {mark}")
+    if result.unexpected:
+        joined = ", ".join(f"AS{a}" for a in sorted(result.unexpected))
+        lines.append(f"[yellow]Unexpected upstreams seen:[/yellow] {joined}")
+    if result.as_set_paths:
+        lines.append(
+            f"[yellow]Paths with AS-sets in last two hops:[/yellow] {len(result.as_set_paths)}"
+        )
+    console.print(Panel("\n".join(lines), title="BGP Path Validation"))
+
+    table = Table(title="Per-collector observations", show_lines=False)
+    table.add_column("Collector")
+    table.add_column("Location")
+    table.add_column("Peer")
+    table.add_column("Upstream")
+    table.add_column("Origin")
+    for p in result.paths:
+        origin_ok = p.origin == result.expected_origin
+        origin_txt = f"AS{p.origin}" if p.origin is not None else "AS-set"
+        origin_cell = origin_txt if origin_ok else f"[red]{origin_txt}[/red]"
+        if p.upstream is None:
+            up_cell = (
+                "[dim]direct[/dim]" if not p.has_as_set else "[yellow]AS-set[/yellow]"
+            )
+        elif p.upstream in result.unexpected:
+            up_cell = f"[yellow]AS{p.upstream}[/yellow]"
+        else:
+            up_cell = f"AS{p.upstream}"
+        table.add_row(p.rrc, p.location, p.peer, up_cell, origin_cell)
+    console.print(table)
+
+
 @app.command()
-def main() -> None:
-    """Placeholder; wired up in a later task."""
-    raise NotImplementedError
+def main(
+    subnet: Optional[str] = typer.Argument(
+        None, help="Subnet to validate, e.g. 203.0.113.0/24"
+    ),
+    config: Optional[Path] = typer.Option(
+        None, "--config", help="Path to providers YAML"
+    ),
+    origin: Optional[int] = typer.Option(
+        None, "--origin", help="Expected origin ASN (ad-hoc)"
+    ),
+    expect: list[int] = typer.Option(
+        [], "--expect", help="Expected upstream ASN (repeatable)"
+    ),
+    all_prefixes: bool = typer.Option(
+        False, "--all", help="Validate every prefix in the config"
+    ),
+) -> None:
+    """Validate observed BGP paths for a subnet against expected origin + upstreams."""
+    cfg = load_config(config) if config else None
+    console = Console()
+
+    if all_prefixes:
+        if cfg is None:
+            console.print("[red]--all requires --config[/red]")
+            raise typer.Exit(code=2)
+        subnets = [p.prefix for p in cfg.prefixes]
+    else:
+        if not subnet:
+            console.print("[red]Provide a subnet or use --all with --config[/red]")
+            raise typer.Exit(code=2)
+        subnets = [validate_cidr(subnet)]
+
+    overall_ok = True
+    with httpx.Client() as client:
+        for target in subnets:
+            try:
+                expectation = resolve_expectation(target, cfg, origin, expect)
+            except ValueError as exc:
+                console.print(f"[red]{exc}[/red]")
+                overall_ok = False
+                continue
+            try:
+                data = fetch_looking_glass(target, client)
+            except (httpx.HTTPError, RipeError) as exc:
+                console.print(f"[red]Fetch failed for {target}: {exc}[/red]")
+                overall_ok = False
+                continue
+            paths = parse_paths(data)
+            if not paths:
+                console.print(f"[red]{target}: not seen by any collector[/red]")
+                overall_ok = False
+                continue
+            result = validate(expectation, paths)
+            render_report(console, result)
+            overall_ok = overall_ok and result.ok
+
+    if not overall_ok:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
