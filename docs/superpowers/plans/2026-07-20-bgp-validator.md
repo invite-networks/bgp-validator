@@ -484,14 +484,14 @@ git commit -m "Add config models, CIDR validation, input resolution"
         "location": "London, United Kingdom",
         "peers": [
           {"as_path": "64510 64505 64497 64496", "peer": "192.0.2.10", "prefix": "203.0.113.0/24"},
-          {"as_path": "64520 64498 64496", "peer": "192.0.2.11", "prefix": "203.0.113.0/24"}
+          {"as_path": "64502 64498 64496", "peer": "192.0.2.11", "prefix": "203.0.113.0/24"}
         ]
       },
       {
         "rrc": "RRC03",
         "location": "Amsterdam, Netherlands",
         "peers": [
-          {"as_path": "64530 64497 64496 64496", "peer": "198.51.100.5", "prefix": "203.0.113.0/24"}
+          {"as_path": "64503 64497 64496 64496", "peer": "198.51.100.5", "prefix": "203.0.113.0/24"}
         ]
       }
     ]
@@ -629,7 +629,7 @@ def _exp() -> PrefixExpectation:
 def test_validate_all_present_is_ok() -> None:
     paths = [
         analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
-        analyze_path("RRC03", "A", "192.0.2.2", "64520 64498 64496"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64496"),
     ]
     result = validate(_exp(), paths)
     assert result.ok is True
@@ -647,18 +647,18 @@ def test_validate_missing_upstream_fails() -> None:
 def test_validate_unexpected_upstream_fails() -> None:
     paths = [
         analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
-        analyze_path("RRC03", "A", "192.0.2.2", "64520 64498 64496"),
-        analyze_path("RRC03", "A", "192.0.2.3", "64520 64599 64496"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64496"),
+        analyze_path("RRC03", "A", "192.0.2.3", "64502 64507 64496"),
     ]
     result = validate(_exp(), paths)
     assert result.ok is False
-    assert result.unexpected == {64599}
+    assert result.unexpected == {64507}
 
 
 def test_validate_bad_origin_fails() -> None:
     paths = [
         analyze_path("RRC01", "L", "192.0.2.1", "64510 64497 64496"),
-        analyze_path("RRC03", "A", "192.0.2.2", "64520 64498 64599"),
+        analyze_path("RRC03", "A", "192.0.2.2", "64502 64498 64511"),
     ]
     result = validate(_exp(), paths)
     assert result.ok is False
