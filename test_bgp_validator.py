@@ -15,7 +15,9 @@ def test_collapse_prepending_removes_consecutive_dupes() -> None:
 
 
 def test_analyze_path_extracts_origin_and_upstream() -> None:
-    a = analyze_path("RRC01", "London", "192.0.2.1", "64510 64505 64497 64496")
+    a: PathAnalysis = analyze_path(
+        "RRC01", "London", "192.0.2.1", "64510 64505 64497 64496"
+    )
     assert a.origin == 64496
     assert a.upstream == 64497
     assert a.has_as_set is False
