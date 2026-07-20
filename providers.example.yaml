@@ -1,0 +1,14 @@
+# Expected BGP origin + upstream providers per prefix.
+# Values below use RFC 5737 / RFC 5398 documentation ranges only.
+prefixes:
+  - prefix: 203.0.113.0/24
+    origin_asn: 64496
+    expected_upstreams:
+      - { asn: 64497, name: "Provider A" }
+      - { asn: 64498, name: "Provider B" }
+      - { asn: 64499, name: "Provider C" }
+  - prefix: 198.51.100.0/24
+    origin_asn: 64496
+    expected_upstreams:
+      - { asn: 64497, name: "Provider A" }
+      - { asn: 64500, name: "Provider D" }
