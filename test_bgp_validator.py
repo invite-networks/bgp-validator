@@ -302,6 +302,23 @@ def test_fetch_missing_data_raises_ripe_error() -> None:
         fetch_looking_glass("203.0.113.0/24", client)
 
 
+def test_render_report_summary_only_omits_per_collector_table() -> None:
+    paths = [
+        analyze_path("RRC01", "London", "192.0.2.1", "64510 64497 64496"),
+        analyze_path("RRC02", "Paris", "192.0.2.2", "64502 64498 64496"),
+    ]
+    result = validate(_exp(), paths)
+    console = Console(record=True, width=120)
+    render_report(console, result, show_details=False)
+    text = console.export_text()
+    # Summary panel still present...
+    assert "BGP Path Validation" in text
+    assert "203.0.113.0/24" in text
+    # ...but the per-collector detail table is suppressed.
+    assert "Per-collector observations" not in text
+    assert "RRC01" not in text
+
+
 def test_cli_no_args_defaults_to_config_all(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

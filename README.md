@@ -37,6 +37,13 @@ to `--config providers.yaml --all`):
 uv run bgp_validator.py
 ```
 
+Print only the summary and skip the per-collector detail table with `--summary`
+(combines with any of the above):
+
+```
+uv run bgp_validator.py --summary
+```
+
 CLI flags (`--origin`, `--expect`) override the config for that run. The process
 exits non-zero if any prefix fails validation.
 

@@ -206,8 +206,10 @@ def validate(
     )
 
 
-def render_report(console: Console, result: ValidationResult) -> None:
-    """Print the summary panel and the per-collector breakdown."""
+def render_report(
+    console: Console, result: ValidationResult, show_details: bool = True
+) -> None:
+    """Print the summary panel, and the per-collector breakdown unless summary-only."""
     status = "[green]PASS[/green]" if result.ok else "[red]FAIL[/red]"
     lines = [
         f"Prefix: [bold]{result.prefix}[/bold]    Result: {status}",
@@ -232,6 +234,9 @@ def render_report(console: Console, result: ValidationResult) -> None:
             f"[yellow]Paths with AS-sets in last two hops:[/yellow] {len(result.as_set_paths)}"
         )
     console.print(Panel("\n".join(lines), title="BGP Path Validation"))
+
+    if not show_details:
+        return
 
     table = Table(title="Per-collector observations", show_lines=False)
     table.add_column("Collector")
@@ -269,6 +274,9 @@ def main(
     ),
     all_prefixes: bool = typer.Option(
         False, "--all", help="Validate every prefix in the config"
+    ),
+    summary: bool = typer.Option(
+        False, "--summary", help="Print only the summary, not the per-collector detail"
     ),
 ) -> None:
     """Validate observed BGP paths for a subnet against expected origin + upstreams."""
@@ -331,7 +339,7 @@ def main(
                 overall_ok = False
                 continue
             result = validate(expectation, paths)
-            render_report(console, result)
+            render_report(console, result, show_details=not summary)
             overall_ok = overall_ok and result.ok
 
     if not overall_ok:
